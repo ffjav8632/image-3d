@@ -198,6 +198,60 @@ def project_multiview_colors(
     return colors
 
 
+def _bbox_normalize(vertices: np.ndarray) -> np.ndarray:
+    """頂点集合をバウンディングボックス基準で0..1に正規化する(退化軸は0)。"""
+    v = np.asarray(vertices, dtype=np.float64)
+    v_min = v.min(axis=0)
+    extent = v.max(axis=0) - v_min
+    extent = np.where(extent > 1e-12, extent, 1.0)
+    return (v - v_min) / extent
+
+
+def transfer_vertex_colors_nearest(
+    src_vertices: np.ndarray,
+    src_colors: np.ndarray,
+    dst_vertices: np.ndarray,
+    align_bbox: bool = False,
+) -> np.ndarray:
+    """最近傍頂点で頂点カラーを転写する(GPU不要の純関数)。
+
+    Pixal3Dジェネレータ等、生成直後のrawメッシュにテクスチャ由来の頂点カラーを
+    付与した後、`meshproc.process` が浮遊小部品除去・簡略化等で頂点集合を
+    再構築してしまい元の頂点カラーが失われるため、後処理後メッシュの各頂点に
+    対し raw メッシュの最近傍頂点の色を転写する(scipy cKDTree使用)。
+
+    Args:
+        src_vertices: (N, 3) rawメッシュの頂点座標。
+        src_colors: (N, 3) or (N, 4) rawメッシュの頂点カラー(uint8推奨)。
+        dst_vertices: (M, 3) 後処理後メッシュの頂点座標。
+        align_bbox: Trueの場合、両頂点集合をそれぞれのバウンディングボックスで
+            0..1に正規化してから最近傍探索する。`meshproc.process` はスケール
+            (mm化)・接地・センタリングを行うため raw/後処理後メッシュは座標系が
+            異なるが、バウンディングボックス正規化でこの相似変換を吸収する
+            (浮遊小部品除去によるbboxのわずかな差は許容誤差とする)。
+
+    Returns:
+        (M, C) 転写後の頂点カラー配列(src_colorsと同じdtype・チャンネル数)。
+    """
+    if len(src_vertices) == 0:
+        raise ValueError("src_verticesが空です。")
+    if len(src_vertices) != len(src_colors):
+        raise ValueError(
+            f"src_verticesとsrc_colorsの長さが一致しません({len(src_vertices)} != {len(src_colors)})。"
+        )
+
+    if align_bbox:
+        src = _bbox_normalize(src_vertices)
+        dst = _bbox_normalize(dst_vertices)
+    else:
+        src = np.asarray(src_vertices, dtype=np.float64)
+        dst = np.asarray(dst_vertices, dtype=np.float64)
+
+    tree = cKDTree(src)
+    _, nn_idx = tree.query(dst)
+    return np.asarray(src_colors)[nn_idx]
+
+
 def quantize(colors: np.ndarray, n_colors: int) -> tuple[np.ndarray, np.ndarray]:
     """頂点カラーをk-meansで `n_colors` (2〜4) 色に量子化する。
 

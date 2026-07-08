@@ -49,6 +49,19 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _mesh_vertex_colors(mesh: trimesh.Trimesh) -> Optional[np.ndarray]:
+    """メッシュが明示的な頂点カラー(ColorVisuals, kind='vertex')を持つ場合に返す。
+
+    Pixal3D等のテクスチャ付き出力ジェネレータは、raw meshにテクスチャから
+    サンプリングした頂点カラーを載せて返す (SPEC.md §3.3)。trimeshのデフォルト
+    カラー(kind=None)は「色情報あり」とみなさない。
+    """
+    visual = getattr(mesh, "visual", None)
+    if isinstance(visual, trimesh.visual.ColorVisuals) and visual.kind == "vertex":
+        return np.asarray(visual.vertex_colors)
+    return None
+
+
 @dataclass
 class Job:
     job_id: str
@@ -336,6 +349,26 @@ class JobManager:
                 None, meshproc.process, raw_mesh, params.target_height_mm, params.max_faces
             )
 
+            # ジェネレータ(pixal3d等)がraw meshにテクスチャ由来の頂点カラーを付与
+            # している場合、meshprocの簡略化・再構築で失われるため、後処理後メッシュへ
+            # 最近傍転写する(座標系差はbbox正規化で吸収)。GLBは頂点カラー付きで
+            # 保存され、color_mode=color4 時はこのカラーから量子化・分割する。
+            generator_vertex_colors: Optional[np.ndarray] = None
+            raw_colors = _mesh_vertex_colors(raw_mesh)
+            if raw_colors is not None:
+                def _transfer_colors(
+                    src_mesh=raw_mesh, src_colors=raw_colors, dst_mesh=processed_mesh
+                ):
+                    transferred = colorproc.transfer_vertex_colors_nearest(
+                        src_mesh.vertices, src_colors, dst_mesh.vertices, align_bbox=True
+                    )
+                    dst_mesh.visual = trimesh.visual.ColorVisuals(
+                        mesh=dst_mesh, vertex_colors=transferred
+                    )
+                    return transferred
+
+                generator_vertex_colors = await loop.run_in_executor(None, _transfer_colors)
+
             # SPEC.md §3.9 (FR-10): texture_mode=paint 時、texgenで全周テクスチャを
             # 生成する。ビューア用GLBはテクスチャ付きメッシュを使う。失敗時はjobを
             # failedにせず警告を記録し、正面/背面投影方式にフォールバックする。
@@ -357,11 +390,16 @@ class JobManager:
                     back_image=extra_views.get("back"),
                     n_colors=params.n_colors,
                     tex_mesh=textured_mesh,
+                    gen_colors=generator_vertex_colors,
                 ):
                     if tex_mesh is not None:
                         # テクスチャ色をUV経由で各頂点にサンプリングし、従来の
                         # 量子化・分割ロジックに接続する(正面投影の代わり)。
                         vertex_colors = texture.sample_vertex_colors_from_texture(tex_mesh)
+                    elif gen_colors is not None:
+                        # ジェネレータ由来の頂点カラー(pixal3dのテクスチャサンプル
+                        # を転写済み)から量子化・分割する(正面投影の代わり)。
+                        vertex_colors = gen_colors
                     else:
                         vertex_colors = colorproc.project_multiview_colors(
                             mesh, image, back_image=back_image
@@ -371,8 +409,8 @@ class JobManager:
                     submeshes = colorproc.split_by_color(mesh, labels, palette)
                     # GLB用(非paint時): 元メッシュ全体にも量子化前(投影そのまま)の
                     # 頂点カラーを付与する。paint時のGLBはテクスチャ優先で頂点カラーは
-                    # 付与しない(下のexportロジック参照)。
-                    if tex_mesh is None:
+                    # 付与しない(下のexportロジック参照)。gen_colors時は転写済み。
+                    if tex_mesh is None and gen_colors is None:
                         mesh.visual = trimesh.visual.ColorVisuals(
                             mesh=mesh, vertex_colors=vertex_colors
                         )

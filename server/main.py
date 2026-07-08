@@ -54,6 +54,12 @@ def _build_generator():
         from .generators.hunyuan3d import Hunyuan3DGenerator
 
         return Hunyuan3DGenerator()
+    if name == "pixal3d":
+        # Pixal3Dは専用venv (.venv-pixal3d) での起動が前提のため、autoでは解決せず
+        # IMAGE3D_GENERATOR=pixal3d の明示指定でのみ使用する (SPEC.md §3.3)。
+        from .generators.pixal3d import Pixal3DGenerator
+
+        return Pixal3DGenerator()
     raise ValueError(f"Unknown generator: {name}")
 
 

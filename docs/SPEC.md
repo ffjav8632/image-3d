@@ -41,6 +41,11 @@
   - `seed`: 乱数シード(省略時ランダム)
 - ジェネレータはプラガブル(`Generator`インターフェース):
   - `hunyuan3d`: Hunyuan3D-2 shape pipeline(本番用)
+  - `pixal3d`: Pixal3D(TencentARC、TRELLIS.2基盤、重みまでMITライセンス)。単一画像
+    からPBRテクスチャ付きメッシュを生成し、テクスチャは頂点カラーとして活用する。
+    専用venv(.venv-pixal3d、requirements-pixal3d.txt)での起動が前提で、
+    IMAGE3D_GENERATOR=pixal3d の明示指定のみ(autoでは解決しない)。
+    マルチビュー入力(FR-9)非対応。パラメータは steps/seed のみ接続。
   - `mock`: 入力画像に依らず既知メッシュ(例: Utahティーポット/スザンヌ相当)を返す
     開発・テスト用ジェネレータ。モデル未ダウンロード環境でもアプリ全体が動作すること。
 

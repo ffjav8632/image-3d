@@ -64,6 +64,29 @@ HY3DGEN_MV_SUBFOLDER = os.environ.get("IMAGE3D_HY3DGEN_MV_SUBFOLDER", "hunyuan3d
 # サブフォルダを使用する(hy3dgen/texgen/pipelines.py 参照)。
 HY3DGEN_PAINT_SUBFOLDER = os.environ.get("IMAGE3D_HY3DGEN_PAINT_SUBFOLDER", "hunyuan3d-paint-v2-0")
 
+# --- Pixal3D 設定 (SPEC.md §3.3。requirements-pixal3d.txt / .venv-pixal3d 前提) ---
+# Pixal3D本体のリポジトリclone先(pipインストールせずsys.path経由でimportする)
+PIXAL3D_REPO_DIR = Path(
+    os.environ.get("IMAGE3D_PIXAL3D_REPO_DIR", BASE_DIR / "third_party" / "Pixal3D")
+)
+# HuggingFaceリポジトリID(モデル重み ~23GB、初回実行時に自動DL)
+PIXAL3D_MODEL_PATH = os.environ.get("IMAGE3D_PIXAL3D_MODEL_PATH", "TencentARC/Pixal3D")
+# 低VRAMモード: モデルをCPU常駐させステージごとにGPUへロード
+# (実測: 低VRAM+1024でプロセスVRAMピーク ~16GB。標準+1536は全モデル常駐で高VRAM)
+PIXAL3D_LOW_VRAM = os.environ.get("IMAGE3D_PIXAL3D_LOW_VRAM", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+# パイプライン解像度 (1024 or 1536)
+PIXAL3D_RESOLUTION = int(os.environ.get("IMAGE3D_PIXAL3D_RESOLUTION", "1024"))
+# カメラ水平FOV (ラジアン)。MoGe(自動FOV推定)は導入しないため固定値を使う。
+# 実機検証(momo.png)では 0.6 rad (~34°) で入力画像に忠実な結果を確認した。
+PIXAL3D_FOV = float(os.environ.get("IMAGE3D_PIXAL3D_FOV", "0.6"))
+# GLB化(o_voxel.postprocess.to_glb)のテクスチャサイズ / デシメーション目標
+PIXAL3D_TEXTURE_SIZE = int(os.environ.get("IMAGE3D_PIXAL3D_TEXTURE_SIZE", "2048"))
+PIXAL3D_DECIMATION_TARGET = int(os.environ.get("IMAGE3D_PIXAL3D_DECIMATION_TARGET", "1000000"))
+
 
 def ensure_dirs() -> None:
     """必要なディレクトリを作成する。"""

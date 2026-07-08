@@ -163,3 +163,69 @@ def test_palette_stats_keys():
     stats = colorproc.palette_stats(labels, palette, mesh)
     for entry in stats:
         assert set(entry.keys()) == {"hex", "face_ratio"}
+
+
+# --- transfer_vertex_colors_nearest (Pixal3D統合: raw mesh -> 後処理後meshへの頂点カラー転写) ---
+
+
+def test_transfer_vertex_colors_nearest_exact_match():
+    """dst頂点がsrc頂点と完全一致する場合、そのまま同じ色が転写されること。"""
+    src_vertices = np.array(
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.0]]
+    )
+    src_colors = np.array(
+        [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255], [255, 255, 0, 255]],
+        dtype=np.uint8,
+    )
+    dst_vertices = src_vertices.copy()
+
+    result = colorproc.transfer_vertex_colors_nearest(src_vertices, src_colors, dst_vertices)
+
+    assert result.shape == (4, 4)
+    assert result.dtype == np.uint8
+    np.testing.assert_array_equal(result, src_colors)
+
+
+def test_transfer_vertex_colors_nearest_picks_closest():
+    """dst頂点はsrc頂点群の最近傍の色を受け取ること。"""
+    src_vertices = np.array([[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]])
+    src_colors = np.array([[255, 0, 0, 255], [0, 0, 255, 255]], dtype=np.uint8)
+
+    # dst頂点はsrc[0]寄り・src[1]寄りの2点
+    dst_vertices = np.array([[0.5, 0.0, 0.0], [9.0, 0.0, 0.0]])
+
+    result = colorproc.transfer_vertex_colors_nearest(src_vertices, src_colors, dst_vertices)
+
+    assert tuple(result[0][:3]) == (255, 0, 0)
+    assert tuple(result[1][:3]) == (0, 0, 255)
+
+
+def test_transfer_vertex_colors_nearest_after_simplification():
+    """meshprocによる簡略化(頂点数減少・再構築)を模した実際的なケース。
+
+    元メッシュを細分化して頂点カラーを投影した後、簡略化で頂点数が変わった
+    別メッシュ(同じ座標系・スケール)へ色転写しても、各頂点が合理的に近い
+    色を受け取ること(全頂点がRGBのいずれかの主要色に一致)。
+    """
+    src_mesh = make_subdivided_box()
+    image = make_4color_image()
+    src_colors = colorproc.project_colors(src_mesh, image)
+
+    # 簡略化を模した別メッシュ(元のboxの頂点のみ=より粗いメッシュ)
+    dst_mesh = trimesh.creation.box(extents=[10.0, 10.0, 20.0])
+
+    result = colorproc.transfer_vertex_colors_nearest(
+        src_mesh.vertices, src_colors, dst_mesh.vertices
+    )
+
+    assert result.shape == (len(dst_mesh.vertices), 4)
+    assert result.dtype == np.uint8
+    assert (result[:, 3] == 255).all()
+
+
+def test_transfer_vertex_colors_nearest_length_mismatch_raises():
+    src_vertices = np.zeros((3, 3))
+    src_colors = np.zeros((2, 4), dtype=np.uint8)
+    dst_vertices = np.zeros((1, 3))
+    with pytest.raises(ValueError):
+        colorproc.transfer_vertex_colors_nearest(src_vertices, src_colors, dst_vertices)
