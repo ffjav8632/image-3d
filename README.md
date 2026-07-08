@@ -32,6 +32,23 @@ Web UIの使い方は [`docs/USAGE.md`](docs/USAGE.md)、詳細仕様は
 - Python 3.12
 - (Phase 2用) NVIDIA GPU + CUDA 12.8 対応ドライバ
 
+### VRAM最小要件(実測ベース)
+
+RTX PRO 6000 Blackwell 96GB での実測ピーク(既定パラメータ:
+`octree_resolution=384`, `max_faces=200000`, テクスチャ2048×2048)に基づく目安。
+
+| 使用機能 | 実測ピーク | 最小要件 | 備考 |
+|---|---|---|---|
+| mockジェネレータのみ | — | GPU不要 | 開発・UI確認用 |
+| 形状生成(単一ビュー/マルチビュー) | 約12GB | **16GB** | 単一ビュー・mvの両パイプライン常駐+生成中ピークを含む |
+| +テクスチャ生成 (`texture_mode=paint`) | 約25GB | **32GB** | shape+paint(delight・multiview diffusion)常駐+生成中ピーク |
+
+- `octree_resolution=512` や `max_faces` 増(高精細プリセット)ではピークが上記より
+  増加する。VRAMが最小要件付近のGPUでは `octree_resolution=256` への引き下げを推奨。
+- 生成ジョブは直列実行(NFR-2)のため、同時実行によるVRAM加算は発生しない。
+  各ジョブ後に `torch.cuda.empty_cache()` で解放される(NFR-3で重みは常駐)。
+- 他プロセスとGPUを共有する場合は、上記に加えてそのプロセスの使用量を確保すること。
+
 ### venv作成 + 依存インストール
 
 Linux / macOS / WSL2:
