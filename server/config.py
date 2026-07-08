@@ -19,7 +19,9 @@ HOST = os.environ.get("IMAGE3D_HOST", "127.0.0.1")
 PORT = int(os.environ.get("IMAGE3D_PORT", "8000"))
 
 # --- ジェネレータ選択 (SPEC.md §3.3) --------------------------------------
-GENERATOR = os.environ.get("IMAGE3D_GENERATOR", "mock")
+# "auto": GPU + hy3dgen が利用可能なら hunyuan3d、なければ mock に自動解決
+# (server/main.py の _build_generator)。テストは conftest.py で mock を明示する。
+GENERATOR = os.environ.get("IMAGE3D_GENERATOR", "auto")
 
 # --- アップロード制限 (FR-1) ------------------------------------------------
 MAX_UPLOAD_BYTES = int(os.environ.get("IMAGE3D_MAX_UPLOAD_BYTES", str(20 * 1024 * 1024)))

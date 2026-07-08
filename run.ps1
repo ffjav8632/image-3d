@@ -25,8 +25,9 @@ if (-not (Test-Path $Uvicorn)) {
     exit 1
 }
 
+# auto: GPU + hy3dgen があれば hunyuan3d、なければ mock(テスト用形状)に自動解決
 if (-not $env:IMAGE3D_GENERATOR) {
-    $env:IMAGE3D_GENERATOR = "mock"
+    $env:IMAGE3D_GENERATOR = "auto"
 }
 if (-not $env:IMAGE3D_HOST) {
     $env:IMAGE3D_HOST = "127.0.0.1"

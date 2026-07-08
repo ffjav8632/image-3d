@@ -497,3 +497,22 @@ def test_texture_mode_paint_with_color4_completes_with_mock(client, monkeypatch)
     palette = job["stats"]["palette"]
     assert 1 <= len(palette) <= 4
     assert job["textured"] is False
+
+
+# --- IMAGE3D_GENERATOR=auto の解決 (mock表示問題の対処) ------------------------
+
+
+def test_auto_generator_resolves_to_mock_when_gpu_unavailable(monkeypatch):
+    from server import config, main
+
+    monkeypatch.setattr(config, "GENERATOR", "auto")
+    monkeypatch.setattr(main, "_hunyuan3d_usable", lambda: False)
+    assert main._build_generator().name == "mock"
+
+
+def test_auto_generator_resolves_to_hunyuan3d_when_usable(monkeypatch):
+    from server import config, main
+
+    monkeypatch.setattr(config, "GENERATOR", "auto")
+    monkeypatch.setattr(main, "_hunyuan3d_usable", lambda: True)
+    assert main._build_generator().name == "hunyuan3d"

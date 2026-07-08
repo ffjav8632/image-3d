@@ -50,6 +50,34 @@ html, body {
   font-size: 13px;
 }
 
+#generator-badge {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2px 10px;
+}
+
+#generator-badge[hidden],
+#mock-warning[hidden] {
+  display: none;
+}
+
+#mock-warning {
+  background: #4a3a10;
+  color: #ffd97a;
+  border-bottom: 1px solid #7a6120;
+  padding: 8px 20px;
+  font-size: 13px;
+}
+
+#mock-warning code {
+  background: rgba(0, 0, 0, 0.35);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
 #app-main {
   flex: 1;
   display: flex;

@@ -19,7 +19,15 @@
   <header id="app-header">
     <h1>Image-3D</h1>
     <span class="subtitle">画像から3Dプリントデータ生成</span>
+    <span id="generator-badge" hidden></span>
   </header>
+
+  <div id="mock-warning" hidden>
+    ⚠ テスト用モックジェネレータで動作中です。アップロード画像は3D化されず、
+    固定のテスト形状が生成されます。実生成にはGPU環境で
+    <code>IMAGE3D_GENERATOR=hunyuan3d ./run.sh</code> として起動してください
+    (GPU + hy3dgen 導入済みなら既定の auto で自動選択されます)。
+  </div>
 
   <main id="app-main">
     <!-- 左ペイン -->

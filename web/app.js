@@ -306,7 +306,8 @@ colorModeCheckbox.addEventListener("change", () => {
 // --- テクスチャ生成(実験的) (SPEC.md §3.9 / FR-10) --------------------------
 // /api/health の texgen_available=false ならチェックボックスを無効化し、
 // 「この環境では利用できません」を表示する(フォールバック、3c-3)。
-async function checkTexgenAvailability() {
+// あわせて使用中ジェネレータをヘッダに表示し、mock時は警告バナーを出す。
+async function checkHealth() {
   try {
     const res = await fetch("/api/health");
     if (!res.ok) return;
@@ -316,11 +317,17 @@ async function checkTexgenAvailability() {
       textureModeCheckbox.disabled = true;
       textureModeUnavailableNote.hidden = false;
     }
+    const badge = document.getElementById("generator-badge");
+    badge.textContent = `生成エンジン: ${data.generator}`;
+    badge.hidden = false;
+    if (data.generator === "mock") {
+      document.getElementById("mock-warning").hidden = false;
+    }
   } catch (err) {
     console.error(err);
   }
 }
-checkTexgenAvailability();
+checkHealth();
 
 // --- プリセット (FR-11) -----------------------------------------------------
 // SPEC.md §3.10: パラメータ一括設定。選択後も個別調整可能(個別変更で「カスタム」に戻る)。

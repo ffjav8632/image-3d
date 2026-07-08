@@ -124,12 +124,23 @@ $env:IMAGE3D_PORT = "8000"
 
 | 変数 | デフォルト | 説明 |
 |---|---|---|
-| `IMAGE3D_GENERATOR` | `mock` | `mock` \| `hunyuan3d` |
+| `IMAGE3D_GENERATOR` | `auto` | `auto` \| `mock` \| `hunyuan3d`。`auto` はGPU+hy3dgenが利用可能なら `hunyuan3d`、なければ `mock` に自動解決 |
 | `IMAGE3D_HOST` | `127.0.0.1` | バインドアドレス |
 | `IMAGE3D_PORT` | `8000` | ポート |
 | `IMAGE3D_MAX_UPLOAD_BYTES` | `20971520`(20MB) | アップロード上限 |
 | `IMAGE3D_DEFAULT_TARGET_HEIGHT_MM` | `100` | 後処理のデフォルト目標高さ |
 | `IMAGE3D_DEFAULT_MAX_FACES` | `200000` | 後処理のデフォルト面数上限 |
+
+### アップロード画像と無関係なテスト形状が生成されるとき
+
+mockジェネレータで動作している(画像を反映しない開発用の固定形状を返す)。
+UIヘッダ右上の「生成エンジン」バッジ、または `GET /api/health` の `generator` で
+確認できる。mock時はUI上部に警告バナーも表示される。対処:
+
+1. GPU導入手順(後述のPhase 2節)を完了させる。`IMAGE3D_GENERATOR` 未指定
+   (= `auto`)なら、GPU+hy3dgenが使える環境では自動的に `hunyuan3d` が選ばれる。
+2. autoでmockになってしまう場合は `IMAGE3D_GENERATOR=hunyuan3d ./run.sh` で
+   明示起動し、起動ログのエラー(torch/hy3dgen未導入、CUDA不可等)を確認する。
 
 ## API例
 

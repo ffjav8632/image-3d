@@ -14,7 +14,8 @@ if [ ! -d "$VENV_DIR" ]; then
   exit 1
 fi
 
-export IMAGE3D_GENERATOR="${IMAGE3D_GENERATOR:-mock}"
+# auto: GPU + hy3dgen があれば hunyuan3d、なければ mock(テスト用形状)に自動解決
+export IMAGE3D_GENERATOR="${IMAGE3D_GENERATOR:-auto}"
 export IMAGE3D_HOST="${IMAGE3D_HOST:-127.0.0.1}"
 export IMAGE3D_PORT="${IMAGE3D_PORT:-8000}"
 

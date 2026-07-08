@@ -23,8 +23,31 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _hunyuan3d_usable() -> bool:
+    """hunyuan3dジェネレータが動作可能か(モデルの実ロードはせず判定)。"""
+    import importlib.util
+
+    if importlib.util.find_spec("hy3dgen") is None:
+        return False
+    try:
+        import torch
+
+        return torch.cuda.is_available()
+    except ImportError:
+        return False
+
+
 def _build_generator():
     name = config.GENERATOR
+    if name == "auto":
+        if _hunyuan3d_usable():
+            name = "hunyuan3d"
+        else:
+            name = "mock"
+            logger.warning(
+                "IMAGE3D_GENERATOR=auto: GPU/hy3dgen が利用できないため mock で起動します。"
+                "アップロード画像は3D化されず、テスト用形状が返ります。"
+            )
     if name == "mock":
         return MockGenerator()
     if name == "hunyuan3d":
@@ -316,7 +339,7 @@ async def health():
 
     return {
         "status": "ok",
-        "generator": config.GENERATOR,
+        "generator": job_manager.generator.name,
         "python_version": platform.python_version(),
         "gpu": gpu_info,
         "texgen_available": texture.is_available(),
