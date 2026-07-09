@@ -691,3 +691,32 @@ html, body {
 .pattern-panel-warn {
   color: #ff8a65;
 }
+
+#pattern-svg-actions {
+  margin-top: 10px;
+}
+
+#pattern-svg-download-btn {
+  display: inline-block;
+  text-align: center;
+  text-decoration: none;
+  box-sizing: border-box;
+}
+
+#pattern-svg-preview-details {
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+#pattern-svg-preview-details summary {
+  cursor: pointer;
+  color: var(--text-1);
+}
+
+#pattern-svg-preview {
+  margin-top: 8px;
+  max-width: 100%;
+  background: #ffffff;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}

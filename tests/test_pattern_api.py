@@ -145,8 +145,54 @@ def test_pattern_json_and_glb_404_before_generation(client):
     assert res.status_code == 404
     res2 = client.get(f"/api/jobs/{job_id}/pattern_preview.glb")
     assert res2.status_code == 404
+    res3 = client.get(f"/api/jobs/{job_id}/pattern.svg")
+    assert res3.status_code == 404
 
 
 def test_pattern_generation_nonexistent_job_404(client):
     res = client.post("/api/jobs/does-not-exist/pattern", json={"n_panels": 6})
     assert res.status_code == 404
+
+
+# --- Phase 4b: 平坦化+実寸SVG型紙出力 --------------------------------------
+def test_pattern_generation_produces_svg_and_distortion_stats(client):
+    job_id = _create_completed_job(client)
+
+    res = client.post(
+        f"/api/jobs/{job_id}/pattern", json={"n_panels": 6, "seam_allowance_mm": 7.0}
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["seam_allowance_mm"] == 7.0
+    assert "n_panels_flattened" in data
+    assert 0 <= data["n_panels_flattened"] <= data["n_panels_actual"]
+
+    for panel in data["panels"]:
+        assert "flatten_failed" in panel
+        if not panel["flatten_failed"]:
+            assert "distortion" in panel
+            assert "edge_length_ratio_mean" in panel["distortion"]
+
+    res_svg = client.get(f"/api/jobs/{job_id}/pattern.svg")
+    assert res_svg.status_code == 200
+    assert res_svg.headers["content-type"] == "image/svg+xml"
+
+    import xml.etree.ElementTree as ET
+
+    root = ET.fromstring(res_svg.content)
+    assert root.tag.endswith("svg")
+    assert root.attrib["width"].endswith("mm")
+
+
+def test_pattern_generation_default_seam_allowance(client):
+    job_id = _create_completed_job(client)
+    res = client.post(f"/api/jobs/{job_id}/pattern", json={})
+    assert res.status_code == 200
+    assert res.json()["seam_allowance_mm"] == 7.0
+
+
+@pytest.mark.parametrize("bad_value", [0, 31, -5, "7", True])
+def test_pattern_generation_rejects_out_of_range_seam_allowance(client, bad_value):
+    job_id = _create_completed_job(client)
+    res = client.post(f"/api/jobs/{job_id}/pattern", json={"seam_allowance_mm": bad_value})
+    assert res.status_code == 400

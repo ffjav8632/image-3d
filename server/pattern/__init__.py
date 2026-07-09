@@ -8,10 +8,14 @@
 from .preprocess import prepare_mesh
 from .segment import panel_stats, segment_panels
 from .preview import build_preview_mesh
+from .flatten import flatten_panel
+from .svg import build_pattern_svg
 
 __all__ = [
     "prepare_mesh",
     "segment_panels",
     "panel_stats",
     "build_preview_mesh",
+    "flatten_panel",
+    "build_pattern_svg",
 ]

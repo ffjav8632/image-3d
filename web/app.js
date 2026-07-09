@@ -63,12 +63,17 @@ const patternPanel = document.getElementById("pattern-panel");
 const patternNPanelsInput = document.getElementById("pattern-n-panels");
 const patternNPanelsValue = document.getElementById("pattern-n-panels-value");
 const patternUseColorsCheckbox = document.getElementById("pattern-use-colors");
+const patternSeamAllowanceInput = document.getElementById("pattern-seam-allowance");
+const patternSeamAllowanceValue = document.getElementById("pattern-seam-allowance-value");
 const patternRunBtn = document.getElementById("pattern-run-btn");
 const patternError = document.getElementById("pattern-error");
 const patternResult = document.getElementById("pattern-result");
 const patternResultCount = document.getElementById("pattern-result-count");
 const patternResultDiskOk = document.getElementById("pattern-result-disk-ok");
+const patternResultFlattenOk = document.getElementById("pattern-result-flatten-ok");
 const patternPanelList = document.getElementById("pattern-panel-list");
+const patternSvgDownloadBtn = document.getElementById("pattern-svg-download-btn");
+const patternSvgPreview = document.getElementById("pattern-svg-preview");
 
 // server/pattern/preview.py の _PALETTE_HEX と同じ並び(隣接パネルが
 //似た色にならないよう色相を大きく飛ばした固定パレット)。
@@ -606,9 +611,13 @@ exportButtons.forEach((btn) => {
   });
 });
 
-// --- ぬいぐるみ型紙生成 (SPEC.md §3.12 / FR-13, Phase 4a) -------------------
+// --- ぬいぐるみ型紙生成 (SPEC.md §3.12 / FR-13, Phase 4a+4b) ----------------
 patternNPanelsInput.addEventListener("input", () => {
   patternNPanelsValue.textContent = patternNPanelsInput.value;
+});
+
+patternSeamAllowanceInput.addEventListener("input", () => {
+  patternSeamAllowanceValue.textContent = patternSeamAllowanceInput.value;
 });
 
 patternToggleBtn.addEventListener("click", () => {
@@ -629,6 +638,7 @@ patternRunBtn.addEventListener("click", async () => {
       body: JSON.stringify({
         n_panels: Number(patternNPanelsInput.value),
         use_colors: patternUseColorsCheckbox.checked,
+        seam_allowance_mm: Number(patternSeamAllowanceInput.value),
       }),
     });
 
@@ -668,11 +678,13 @@ function renderPatternResult(data) {
   patternResultCount.textContent = `${data.n_panels_actual} (要求: ${data.n_panels_requested})`;
   const diskOkCount = data.panels.filter((p) => p.disk_topology).length;
   patternResultDiskOk.textContent = `${diskOkCount} / ${data.panels.length}`;
+  const flattenOkCount = data.panels.filter((p) => !p.flatten_failed).length;
+  patternResultFlattenOk.textContent = `${flattenOkCount} / ${data.panels.length}`;
 
   patternPanelList.innerHTML = "";
   data.panels.forEach((panel) => {
     const li = document.createElement("li");
-    if (!panel.disk_topology) li.classList.add("pattern-panel-warn");
+    if (!panel.disk_topology || panel.flatten_failed) li.classList.add("pattern-panel-warn");
 
     const swatch = document.createElement("span");
     swatch.className = "pattern-panel-swatch";
@@ -681,12 +693,26 @@ function renderPatternResult(data) {
     const label = document.createElement("span");
     const areaCm2 = (panel.area_mm2 / 100).toFixed(1);
     const topologyNote = panel.disk_topology ? "" : " ※穴あり";
-    label.textContent = `#${panel.panel_id}: ${panel.n_faces}面 / ${areaCm2}cm²${topologyNote}`;
+
+    let distortionNote = "";
+    if (panel.flatten_failed) {
+      distortionNote = " ※平坦化失敗";
+    } else if (panel.distortion) {
+      const over10pct = panel.distortion.edge_length_over_10pct_fraction * 100;
+      distortionNote = ` / 辺長歪み±10%超: ${over10pct.toFixed(0)}%`;
+      if (over10pct > 20) li.classList.add("pattern-panel-warn");
+    }
+
+    label.textContent = `#${panel.panel_id}: ${panel.n_faces}面 / ${areaCm2}cm²${topologyNote}${distortionNote}`;
 
     li.appendChild(swatch);
     li.appendChild(label);
     patternPanelList.appendChild(li);
   });
+
+  const svgUrl = `/api/jobs/${currentJobId}/pattern.svg?t=${Date.now()}`;
+  patternSvgDownloadBtn.href = svgUrl;
+  patternSvgPreview.src = svgUrl;
 
   patternResult.hidden = false;
 }

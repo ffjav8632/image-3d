@@ -297,6 +297,10 @@ async def delete_job(job_id: str):
 _PATTERN_MIN_PANELS = 4
 _PATTERN_MAX_PANELS = 12
 _PATTERN_DEFAULT_PANELS = 6
+_PATTERN_MIN_SEAM_ALLOWANCE_MM = 1
+_PATTERN_MAX_SEAM_ALLOWANCE_MM = 30
+_PATTERN_DEFAULT_SEAM_ALLOWANCE_MM = 7.0
+_PATTERN_ARAP_ITERATIONS = 10
 
 
 def _pattern_vertex_colors(mesh):
@@ -324,6 +328,7 @@ async def create_job_pattern(job_id: str, body: Optional[dict] = None):
     n_panels = body.get("n_panels", _PATTERN_DEFAULT_PANELS)
     use_colors = body.get("use_colors", True)
     smooth_iterations = body.get("smooth_iterations", 10)
+    seam_allowance_mm = body.get("seam_allowance_mm", _PATTERN_DEFAULT_SEAM_ALLOWANCE_MM)
 
     if isinstance(n_panels, bool) or not isinstance(n_panels, int) or not (
         _PATTERN_MIN_PANELS <= n_panels <= _PATTERN_MAX_PANELS
@@ -338,15 +343,34 @@ async def create_job_pattern(job_id: str, body: Optional[dict] = None):
         0 <= smooth_iterations <= 50
     ):
         raise HTTPException(status_code=400, detail="smooth_iterationsは0〜50の整数である必要があります。")
+    if isinstance(seam_allowance_mm, bool) or not isinstance(seam_allowance_mm, (int, float)) or not (
+        _PATTERN_MIN_SEAM_ALLOWANCE_MM <= seam_allowance_mm <= _PATTERN_MAX_SEAM_ALLOWANCE_MM
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"seam_allowance_mmは{_PATTERN_MIN_SEAM_ALLOWANCE_MM}〜"
+                f"{_PATTERN_MAX_SEAM_ALLOWANCE_MM}の数値である必要があります。"
+            ),
+        )
+    seam_allowance_mm = float(seam_allowance_mm)
 
     model_path = job.model_path("glb")
     if not model_path.exists():
         raise HTTPException(status_code=404, detail="モデルファイルが見つかりません。")
 
     def _run_pattern() -> dict:
+        import numpy as np
         import trimesh
 
-        from .pattern import build_preview_mesh, panel_stats, prepare_mesh, segment_panels
+        from .pattern import (
+            build_pattern_svg,
+            build_preview_mesh,
+            flatten_panel,
+            panel_stats,
+            prepare_mesh,
+            segment_panels,
+        )
 
         loaded = trimesh.load(model_path, file_type="glb", process=False)
         if isinstance(loaded, trimesh.Scene):
@@ -374,13 +398,47 @@ async def create_job_pattern(job_id: str, body: Optional[dict] = None):
         preview_data = preview_mesh.export(file_type="glb")
         job.pattern_preview_glb_path().write_bytes(preview_data)
 
+        # 平坦化(Phase 4b): パネルごとにLSCM+ARAPで2D展開する。円盤位相でない
+        # パネルは flatten_panel が例外を投げず flatten_failed=True を返すため、
+        # 他パネルの処理を続行できる。
+        panels_2d = []
+        stats_by_id = {s["panel_id"]: s for s in stats}
+        for panel_id in sorted(stats_by_id):
+            face_idx = np.where(labels == panel_id)[0]
+            flat_result = flatten_panel(prepared, face_idx, n_arap_iterations=_PATTERN_ARAP_ITERATIONS)
+            flat_result["panel_id"] = int(panel_id)
+            panels_2d.append(flat_result)
+
+            panel_stat_entry = stats_by_id[panel_id]
+            panel_stat_entry["flatten_failed"] = bool(flat_result.get("flatten_failed"))
+            if flat_result.get("flatten_failed"):
+                panel_stat_entry["flatten_failed_reason"] = flat_result.get("reason", "")
+            else:
+                panel_stat_entry["distortion"] = flat_result["distortion"]
+
+        model_height_mm = float(job.stats.get("bbox_mm", [0, 0, 0])[2] or job.params.get("target_height_mm", 0) or 0)
+        model_name = job.original_filename or job_id
+
+        svg_text = build_pattern_svg(
+            panels_2d,
+            seam_allowance_mm=seam_allowance_mm,
+            label_prefix="P",
+            model_name=model_name,
+            model_height_mm=model_height_mm,
+        )
+        job.pattern_svg_path().write_text(svg_text, encoding="utf-8")
+
+        n_flatten_ok = sum(1 for p in panels_2d if not p.get("flatten_failed"))
+
         result = {
             "job_id": job_id,
             "n_panels_requested": n_panels,
             "n_panels_actual": len(stats),
             "use_colors": use_colors,
             "smooth_iterations": smooth_iterations,
-            "panels": stats,
+            "seam_allowance_mm": seam_allowance_mm,
+            "n_panels_flattened": n_flatten_ok,
+            "panels": list(stats_by_id.values()),
         }
         job.pattern_json_path().write_text(
             json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -421,6 +479,17 @@ async def get_job_pattern_preview_glb(job_id: str):
     return FileResponse(
         path, media_type="model/gltf-binary", filename=f"{job_id}_pattern_preview.glb"
     )
+
+
+@app.get("/api/jobs/{job_id}/pattern.svg")
+async def get_job_pattern_svg(job_id: str):
+    job = job_manager.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="ジョブが見つかりません。")
+    path = job.pattern_svg_path()
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="型紙SVGがまだ生成されていません。")
+    return FileResponse(path, media_type="image/svg+xml", filename=f"{job_id}_pattern.svg")
 
 
 @app.post("/api/sheet/split")

@@ -122,6 +122,10 @@ class Job:
         """型紙パネル色分けプレビューGLB (SPEC.md §3.12 / FR-13)。"""
         return self.dir_path() / "pattern_preview.glb"
 
+    def pattern_svg_path(self) -> Path:
+        """実寸SVG型紙 (SPEC.md §3.12 / FR-13, Phase 4b)。"""
+        return self.dir_path() / "pattern.svg"
+
     def is_color_mode(self) -> bool:
         return self.params.get("color_mode", "none") == "color4"
 
