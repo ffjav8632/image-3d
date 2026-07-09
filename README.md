@@ -7,6 +7,9 @@ Web UIの使い方は [`docs/USAGE.md`](docs/USAGE.md)、詳細仕様は
 [`docs/DEVELOPMENT_POLICY.md`](docs/DEVELOPMENT_POLICY.md)、実装計画は
 [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) を参照。
 
+バグ報告・機能要望は [Issues](https://github.com/animede/image-3d/issues)、
+コントリビューションは [CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。
+
 ## 現在の状態(Phase 1〜3b)
 
 - Image-to-3D 生成は **mockジェネレータ**(決定的なパラメトリックメッシュ)を使用。
