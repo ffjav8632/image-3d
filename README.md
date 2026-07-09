@@ -30,6 +30,10 @@ Web UIの使い方は [`docs/USAGE.md`](docs/USAGE.md)、詳細仕様は
 - 3つ目のジェネレータとして **Pixal3D**(MITライセンス、PBRテクスチャ付き出力)を
   統合(下記「Pixal3Dジェネレータ」参照)。専用venv `.venv-pixal3d` +
   `IMAGE3D_GENERATOR=pixal3d` の明示指定で使用する。
+- Phase 4a で **ぬいぐるみ型紙生成(パネル分割)** の第一段(FR-13)に対応
+  (下記「Phase 4a: ぬいぐるみ型紙(パネル分割)」参照)。生成済みジョブの
+  メッシュをパネルに分割し、色分けプレビューをビューアで確認できる。
+  実寸SVG出力(縫い代・合印付き)はPhase 4bで対応予定。
 
 ## セットアップ
 
@@ -179,6 +183,13 @@ curl -s -X POST http://127.0.0.1:8000/api/jobs \
 
 # キャラクターシート分割(Phase 3a、ジョブを作らない同期API)
 curl -s -X POST http://127.0.0.1:8000/api/sheet/split -F "image=@sheet.png"
+
+# ぬいぐるみ型紙生成(Phase 4a、FR-13。対象ジョブはcompleted必須)
+curl -s -X POST http://127.0.0.1:8000/api/jobs/<job_id>/pattern \
+  -H "Content-Type: application/json" \
+  -d '{"n_panels": 6, "use_colors": true}'
+curl -s http://127.0.0.1:8000/api/jobs/<job_id>/pattern.json
+curl -s http://127.0.0.1:8000/api/jobs/<job_id>/pattern_preview.glb -o pattern_preview.glb
 ```
 
 全エンドポイントは [`docs/SPEC.md`](docs/SPEC.md) §5 を参照。
@@ -215,6 +226,17 @@ curl -s -X POST http://127.0.0.1:8000/api/sheet/split -F "image=@sheet.png"
   `texture_mode=paint`(単体・`color_mode=color4`併用)を指定してもジョブが
   正常completedすること(paint失敗→フォールバック経路を`_run_paint`の
   モンキーパッチで検証。実際のpaint成功経路はGPU実機検証でカバー)。
+- `tests/test_pattern_segment.py`(Phase 4a追加): `server/pattern/` の
+  TestClient不要の純粋関数テスト。icosphere・カプセルで全面被覆・パネル数・
+  各パネルの連結性・円盤位相(境界ループ1本)・面積合計の整合を検証。
+  上半球赤/下半球青に着色した球で、色境界誘導(`use_colors=True`)が
+  誘導なしと比べ明確にパネル境界を色境界へ寄せることを検証
+  (境界エッジの色差整合率で比較)。`prepare_mesh`/`build_preview_mesh`の
+  基本性質も検証。
+- `tests/test_pattern_api.py`(Phase 4a追加): mockジェネレータでジョブ作成→
+  `POST /api/jobs/{id}/pattern` → `pattern.json`/`pattern_preview.glb`取得を
+  E2E検証(GLBはtrimeshで再読込可能なことも確認)。未完了ジョブへのリクエストが
+  409、`n_panels`範囲外・`smooth_iterations`範囲外が400になることを検証。
 
 ## Phase 2: GPU導入手順(Hunyuan3D-2、実機検証済み)
 
@@ -680,6 +702,87 @@ curl -s -X POST http://127.0.0.1:8000/api/jobs \
   追加するパッチが必要(上記セットアップ参照)。third_party ディレクトリを
   再取得(git clone)した場合は再適用が必要。
 
+## Phase 4a: ぬいぐるみ型紙(パネル分割)
+
+生成済みジョブのメッシュから、ぬいぐるみ縫製用の型紙のうち**パネル分割+
+3Dプレビュー**まで(SPEC.md §3.12 / FR-13の前半)を実装した。
+平坦化・実寸SVG出力(縫い代・合印・布目線付き)は **Phase 4b** で対応予定。
+
+### モジュール設計
+
+`server/pattern/` は将来の独立リポジトリ化に備えた**純粋モジュール**
+(`server/DEVELOPMENT_POLICY.md` §3.5)。`server/` 内の他モジュール
+(config・jobs・generators・colorprocなど)を一切importせず、依存は
+numpy / scipy / trimesh のみ(新規pip依存の追加なし)。
+
+- `server/pattern/preprocess.py`: `prepare_mesh()` — Taubin平滑化
+  (失敗時はラプラシアンにフォールバック)→ 簡略化(1万〜2万面。
+  `fast-simplification` は既存の `requirements.txt` 依存を流用、
+  失敗時は trimesh標準の `simplify_quadric_decimation` にフォールバック)
+  → 最大連結成分抽出。頂点カラーがあれば最近傍で新メッシュへ転写する。
+- `server/pattern/segment.py`: `segment_panels()` — 面の双対グラフ上で
+  farthest-point samplingによりシード面を選び、エッジ重み付き多始点
+  最短路(`scipy.sparse.csgraph.dijkstra`)でVoronoi風にパネルを成長させる。
+  凹エッジ(谷折れ)・色境界(`use_colors=True`時)のエッジは**通行コストを
+  上げる**ことでパネル境界がそこに沿いやすくなるよう誘導する
+  (直感に反して「軽くする」方向では逆効果になることを実験で確認済み。
+  詳細はモジュール内docstring参照)。後処理で (a) 非連結パネルの最寄り
+  パネルへの再割当、(b) 極小パネル(全面積2%未満)の隣接吸収、
+  (c) 円盤位相(境界ループ1本)の判定・修復を行う。修復しきれない場合は
+  例外にせず `panel_stats()` の `disk_topology: false` に正直に反映する。
+- `server/pattern/preview.py`: `build_preview_mesh()` — パネルごとに
+  隣接パネルが似た色にならない固定12色パレットで面カラーを塗ったメッシュを返す。
+
+### API・UI
+
+- `POST /api/jobs/{id}/pattern`(body: `n_panels`(4〜12, 既定6)、
+  `use_colors`(既定true)、`smooth_iterations`(既定10))→ 同期実行(数秒)で
+  `pattern.json`(実パネル数・パネルごとの面数/面積/円盤位相)と
+  `pattern_preview.glb`(パネル色分けメッシュ)をジョブディレクトリへ保存。
+  対象ジョブが `completed` でなければ409、パラメータ範囲外は400。
+- `GET /api/jobs/{id}/pattern.json` / `GET /api/jobs/{id}/pattern_preview.glb`
+  で取得(未生成時404)。
+- UI: ビューア下部に「ぬいぐるみ型紙を生成」ボタン。クリックでパネル数
+  スライダ・色境界誘導チェックボックスを表示し、実行するとビューアに
+  パネル色分けプレビューが表示される(「モデル表示に戻す」で通常表示に戻せる)。
+  型紙SVGダウンロードは次フェーズ(Phase 4b)である旨を明記している。
+
+### 実メッシュでの検証結果
+
+mockジェネレータ(`IMAGE3D_GENERATOR=mock`)でAPI・UIのE2E動作を確認した上で、
+実際に生成済みの `data/jobs/` 内メッシュに対して直接 `server/pattern/` を
+実行して検証した。
+
+- **hunyuan3d生成メッシュ(momo.png、頂点カラーなし)**: 3ジョブ ×
+  パネル数 4/6/8/10/12 の計15ケースで **disk_topology達成率 89.8%
+  (106/118パネル)**。パネル数を増やすほど個々のパネルが小さくなり
+  円盤位相を保ちやすくなる傾向(n_panels=10, 12では概ね90%超〜100%)。
+  処理時間は前処理+分割で1ジョブあたり1秒未満。
+- **pixal3d生成メッシュ(momo.png、頂点カラー付き、ジョブ`58d8e1d0`)**:
+  色境界誘導は機能する(球のような単純形状でのテストでは境界エッジの
+  色差整合率が誘導なしの2〜9%から63〜85%まで改善することを単体テストで
+  確認済み)一方、このジョブの実メッシュでは **disk_topology達成率が
+  0/5** と低かった。原因を調査したところ、`model.glb` 自体が
+  `merge_vertices()` 後も440個の連結成分・940本の非多様体エッジ
+  (3面以上を共有するエッジ)を含む、UVアトラス起因の位相的に汚れた
+  メッシュであることが判明した(パネル分割アルゴリズム側の不具合ではなく、
+  Pixal3D側のGLB化パイプラインに起因する既知の制約。関連: 本READMEの
+  「Pixal3Dジェネレータ」節、`server/generators/pixal3d_raster.py`)。
+  `prepare_mesh()` の平滑化・簡略化・最大連結成分抽出はこの種の非多様体
+  性を完全には解消できないため、円盤位相修復に失敗したパネルは
+  `disk_topology: false` として正直に報告される(仕様通りの挙動)。
+
+### 既知の制限
+
+- 円盤位相の完全保証はしない。メッシュ自体が非多様体・多数の連結成分を
+  持つ場合(上記pixal3d例)、修復しきれないパネルが残りうる。Phase 4bの
+  平坦化(LSCM/ARAP)ではこれらのパネルは歪みが大きくなる、または
+  展開自体に失敗する可能性がある。
+- 詰め物による膨張の逆補正・型紙の縫い合わせ長の厳密整合はPhase 4c以降。
+- `n_panels` は要求値の上限であり、極小パネル吸収により実際のパネル数は
+  それより少なくなることがある(`pattern.json` の `n_panels_actual` を
+  参照)。
+
 ## Pixal3Dジェネレータ(MITライセンス、実機検証済み)
 
 [Pixal3D](https://github.com/TencentARC/Pixal3D)(TencentARC、SIGGRAPH 2026、
@@ -890,7 +993,11 @@ image-3d/
 │   ├── meshproc.py           # メッシュ後処理
 │   ├── colorproc.py          # 4色カラープリント対応(Phase 2.5、頂点カラー投影・量子化・分割)
 │   ├── sheet.py              # キャラクターシート自動分割(Phase 3a、パネル検出)
-│   └── texture.py            # テクスチャ生成 texgen 統合(Phase 3c、paint常駐ラッパ・頂点カラーサンプリング)
+│   ├── texture.py            # テクスチャ生成 texgen 統合(Phase 3c、paint常駐ラッパ・頂点カラーサンプリング)
+│   └── pattern/               # ぬいぐるみ型紙生成(Phase 4a、純粋モジュール。numpy/scipy/trimeshのみに依存)
+│       ├── preprocess.py     # prepare_mesh(): 平滑化+簡略化+最大連結成分抽出
+│       ├── segment.py        # segment_panels(): パネル分割(円盤位相保証・色境界誘導)
+│       └── preview.py        # build_preview_mesh(): パネル色分けプレビューメッシュ
 ├── web/                      # 静的フロントエンド
 ├── tests/                    # pytest
 ├── data/jobs/                # 生成物(gitignore対象)

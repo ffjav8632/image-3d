@@ -209,6 +209,40 @@
         <div id="viewer-placeholder">モデルを生成するとここに表示されます</div>
       </div>
 
+      <div id="pattern-bar">
+        <button type="button" id="pattern-toggle-btn" class="secondary-btn" disabled>
+          ぬいぐるみ型紙を生成
+        </button>
+        <button type="button" id="pattern-back-to-model-btn" class="secondary-btn" hidden>
+          モデル表示に戻す
+        </button>
+      </div>
+
+      <div id="pattern-panel" hidden>
+        <h3>ぬいぐるみ型紙(パネル分割) <span class="sub-hint">Phase 4a</span></h3>
+        <p class="sub-hint">
+          モデルをパネルに分割し、色分けプレビューを表示します。
+          型紙SVG出力(縫い代・合印付き)は次フェーズ(Phase 4b)で対応予定です。
+        </p>
+        <label class="field">
+          <span>パネル数: <b id="pattern-n-panels-value">6</b></span>
+          <input type="range" id="pattern-n-panels" min="4" max="12" step="1" value="6" />
+        </label>
+        <label class="field checkbox">
+          <input type="checkbox" id="pattern-use-colors" checked />
+          <span>色境界に沿ってパネル分割する(頂点カラーがある場合)</span>
+        </label>
+        <button type="button" id="pattern-run-btn" class="primary-btn">型紙を生成</button>
+        <div class="progress-error" id="pattern-error" hidden></div>
+        <div id="pattern-result" hidden>
+          <p class="sub-hint">
+            実パネル数: <b id="pattern-result-count">-</b>
+            (円盤位相OK: <b id="pattern-result-disk-ok">-</b>)
+          </p>
+          <ul id="pattern-panel-list"></ul>
+        </div>
+      </div>
+
       <div id="export-bar">
         <span class="export-label">エクスポート:</span>
         <button class="export-btn" data-format="stl" disabled>STL</button>

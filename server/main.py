@@ -290,6 +290,139 @@ async def delete_job(job_id: str):
     return {"deleted": True}
 
 
+# --- ぬいぐるみ型紙生成 (SPEC.md §3.12 / FR-13, Phase 4a) --------------------
+# `server/pattern/` は純粋モジュール(numpy/scipy/trimeshのみに依存し、
+# server内の他モジュールを一切importしない)。ここではジョブディレクトリ・
+# パラメータバリデーション等アプリ固有の事情を扱う薄いアダプタとして接続する。
+_PATTERN_MIN_PANELS = 4
+_PATTERN_MAX_PANELS = 12
+_PATTERN_DEFAULT_PANELS = 6
+
+
+def _pattern_vertex_colors(mesh):
+    import numpy as np
+    import trimesh
+
+    visual = getattr(mesh, "visual", None)
+    if isinstance(visual, trimesh.visual.ColorVisuals) and visual.kind == "vertex":
+        return np.asarray(visual.vertex_colors)
+    return None
+
+
+@app.post("/api/jobs/{job_id}/pattern")
+async def create_job_pattern(job_id: str, body: Optional[dict] = None):
+    job = job_manager.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="ジョブが見つかりません。")
+    if job.status != STATUS_COMPLETED:
+        raise HTTPException(status_code=409, detail=f"ジョブは未完了です(status={job.status})。")
+
+    body = body or {}
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="リクエストボディはJSONオブジェクトである必要があります。")
+
+    n_panels = body.get("n_panels", _PATTERN_DEFAULT_PANELS)
+    use_colors = body.get("use_colors", True)
+    smooth_iterations = body.get("smooth_iterations", 10)
+
+    if isinstance(n_panels, bool) or not isinstance(n_panels, int) or not (
+        _PATTERN_MIN_PANELS <= n_panels <= _PATTERN_MAX_PANELS
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"n_panelsは{_PATTERN_MIN_PANELS}〜{_PATTERN_MAX_PANELS}の整数である必要があります。",
+        )
+    if not isinstance(use_colors, bool):
+        raise HTTPException(status_code=400, detail="use_colorsはbool値である必要があります。")
+    if isinstance(smooth_iterations, bool) or not isinstance(smooth_iterations, int) or not (
+        0 <= smooth_iterations <= 50
+    ):
+        raise HTTPException(status_code=400, detail="smooth_iterationsは0〜50の整数である必要があります。")
+
+    model_path = job.model_path("glb")
+    if not model_path.exists():
+        raise HTTPException(status_code=404, detail="モデルファイルが見つかりません。")
+
+    def _run_pattern() -> dict:
+        import trimesh
+
+        from .pattern import build_preview_mesh, panel_stats, prepare_mesh, segment_panels
+
+        loaded = trimesh.load(model_path, file_type="glb", process=False)
+        if isinstance(loaded, trimesh.Scene):
+            mesh = trimesh.util.concatenate(
+                [g for g in loaded.geometry.values() if isinstance(g, trimesh.Trimesh)]
+            )
+        else:
+            mesh = loaded
+
+        vertex_colors = _pattern_vertex_colors(mesh)
+
+        prepared = prepare_mesh(mesh, smooth_iterations=smooth_iterations)
+        prepared_colors = _pattern_vertex_colors(prepared) if vertex_colors is not None else None
+
+        labels = segment_panels(
+            prepared,
+            n_panels=n_panels,
+            vertex_colors=prepared_colors,
+            use_colors=use_colors,
+            seed=0,
+        )
+        stats = panel_stats(prepared, labels)
+        preview_mesh = build_preview_mesh(prepared, labels)
+
+        preview_data = preview_mesh.export(file_type="glb")
+        job.pattern_preview_glb_path().write_bytes(preview_data)
+
+        result = {
+            "job_id": job_id,
+            "n_panels_requested": n_panels,
+            "n_panels_actual": len(stats),
+            "use_colors": use_colors,
+            "smooth_iterations": smooth_iterations,
+            "panels": stats,
+        }
+        job.pattern_json_path().write_text(
+            json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        return result
+
+    import asyncio
+
+    loop = asyncio.get_running_loop()
+    try:
+        result = await loop.run_in_executor(None, _run_pattern)
+    except Exception as exc:
+        logger.exception("Pattern generation failed for job %s", job_id)
+        raise HTTPException(status_code=500, detail=f"型紙生成に失敗しました: {exc}") from exc
+
+    return result
+
+
+@app.get("/api/jobs/{job_id}/pattern.json")
+async def get_job_pattern_json(job_id: str):
+    job = job_manager.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="ジョブが見つかりません。")
+    path = job.pattern_json_path()
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="型紙がまだ生成されていません。")
+    return JSONResponse(json.loads(path.read_text(encoding="utf-8")))
+
+
+@app.get("/api/jobs/{job_id}/pattern_preview.glb")
+async def get_job_pattern_preview_glb(job_id: str):
+    job = job_manager.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="ジョブが見つかりません。")
+    path = job.pattern_preview_glb_path()
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="型紙プレビューがまだ生成されていません。")
+    return FileResponse(
+        path, media_type="model/gltf-binary", filename=f"{job_id}_pattern_preview.glb"
+    )
+
+
 @app.post("/api/sheet/split")
 async def split_sheet(image: UploadFile = File(...)):
     """キャラクターシート画像から被写体パネルを自動検出する (SPEC.md §3.8 / FR-9)。
