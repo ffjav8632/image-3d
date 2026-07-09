@@ -1,0 +1,44 @@
+Image-3D — Third-Party Notices
+===============================
+
+This repository's own code (server/, web/, docs/, tests/, etc.) is
+licensed under the Polyform Small Business License 1.0.0 (see LICENSE).
+It does not include third-party model code or weights; those are
+cloned or downloaded separately by the user into third_party/ and
+~/.cache (see README.md "セットアップ" and "ライセンス").
+
+The notices below are provided for users who configure this app to
+use the Hunyuan3D-2 or Pixal3D generators, per the attribution/notice
+requirements of those projects' own licenses.
+
+Tencent Hunyuan 3D 2.0 (optional IMAGE3D_GENERATOR=hunyuan3d)
+--------------------------------------------------------------
+
+Tencent Hunyuan 3D 2.0 is licensed under the Tencent Hunyuan 3D 2.0
+Community License Agreement, Copyright (c) 2025 Tencent. All Rights
+Reserved. The trademark rights of "Tencent Hunyuan" are owned by
+Tencent or its affiliate.
+
+See third_party/Hunyuan3D-2/LICENSE (populated after you clone the
+upstream repository per README.md) for the full agreement, including
+territory and monthly-active-user restrictions.
+
+Pixal3D / DINOv3 (optional IMAGE3D_GENERATOR=pixal3d)
+-------------------------------------------------------
+
+Built with DINOv3.
+
+The Pixal3D generator uses Meta's DINOv3 model weights
+(camenduru/dinov3-vitl16-pretrain-lvd1689m, a distillation of
+facebook/dinov3-vit7b16-pretrain-lvd1689m) for image conditioning.
+DINOv3 is licensed under Meta's DINOv3 License:
+https://ai.meta.com/resources/models-and-libraries/dinov3-license/
+
+DINO Materials are used in this project's Pixal3D image-conditioning
+pipeline.
+
+Pixal3D itself (code and model weights) and its build-time
+dependencies used by this app's generation path (TRELLIS.2 / o-voxel,
+CuMesh, FlexGEMM, drtk, NATTEN) are MIT-licensed. See README.md
+"ライセンス" for the full third-party OSS table and per-package
+license summary.
